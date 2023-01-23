@@ -46,6 +46,7 @@ func main() {
 
 	db.AutoMigrate(&Build{})
 
+	// TODO: separate out into proper package and file
 	s := &server{
 		db: db,
 	}
@@ -60,8 +61,24 @@ func main() {
 	http.HandleFunc("/builds", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
+			var builds []Build
+
+			result := s.db.Find(&builds)
+			if result.Error != nil {
+				log.Printf("failed to parse build: %+v", err)
+				http.Error(w, "failed to parse build", http.StatusBadRequest)
+				return
+			}
+
+			b, err := json.Marshal(builds)
+			if result.Error != nil {
+				log.Printf("failed to parse build: %+v", err)
+				http.Error(w, "failed to parse build", http.StatusBadRequest)
+				return
+			}
+
 			data := map[string]string{
-				"Builds": "", // TODO fill this with query data
+				"Builds": string(b), // TODO fill this with query data
 			}
 			t.ExecuteTemplate(w, "builds.html.tmpl", data)
 		case http.MethodPost:
