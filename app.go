@@ -22,7 +22,8 @@ type server struct {
 	db *gorm.DB
 }
 
-// Build holds info for a general Build
+// Build holds info for a general Build. The BuildsResponse creates
+// a list of Builds
 type Build struct {
 	gorm.Model
 
@@ -30,6 +31,11 @@ type Build struct {
 	Description string
 	Owner       string
 	Parts       map[string]interface{} `gorm:"serializer:json"`
+}
+
+// BuildsResponse hydrates the Builds html template.
+type BuildsResponse struct {
+	Builds []Build
 }
 
 func main() {
@@ -70,17 +76,13 @@ func main() {
 				return
 			}
 
-			b, err := json.Marshal(builds)
-			if result.Error != nil {
-				log.Printf("failed to parse build: %+v", err)
-				http.Error(w, "failed to parse build", http.StatusBadRequest)
-				return
+			buildsRes := BuildsResponse{
+				Builds: builds,
 			}
 
-			data := map[string]string{
-				"Builds": string(b), // TODO fill this with query data
-			}
-			t.ExecuteTemplate(w, "builds.html.tmpl", data)
+			log.Printf("%+v\n", builds)
+
+			t.ExecuteTemplate(w, "builds.html.tmpl", buildsRes)
 		case http.MethodPost:
 			defer r.Body.Close()
 			b, err := ioutil.ReadAll(r.Body)

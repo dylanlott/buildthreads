@@ -13,12 +13,13 @@
     </style>
   </head>
   <body>
-	<script src="index.js"></script>
+  <div>
+    <h1>Builds</h1>
+    {{range .Builds}} 
+      <div>{{.ID}} {{.Name}} {{.CreatedAt}}</div>
+    {{end}}
+	<script>
+    // TODO: for the script
+  </script>
   </body>
 </html>
-
-
-<h1>Builds</h1>
-{{ if .Builds }}
-  {{.Builds}}
-{{end}}
