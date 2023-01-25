@@ -80,6 +80,12 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	r.Route("/", func(r chi.Router) {
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			data := map[string]interface{}{}
+			t.ExecuteTemplate(w, "index.html.tmpl", data)
+		})
+	})
 	// Register Builds Endpoint
 	r.Route("/builds", func(r chi.Router) {
 		// Build Main List
