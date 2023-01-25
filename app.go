@@ -2,6 +2,8 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -44,31 +46,32 @@ type BuildDetail struct {
 }
 
 func main() {
+	// Parse flags and environment variables
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// TODO: read DSN from env vars
-	dsn := "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable"
+	// read postgres dsn from env and fallback to dev dsn if none is set in env.
+	var dsn string
+	dsn = os.Getenv("BUILDTHREAD_PG_DSN")
+	if dsn == "" {
+		dsn = "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable"
+	}
+
+	// attempt to connect with dsn
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %s", err)
 	}
 
+	// Migrate models
 	db.AutoMigrate(&Build{})
 
 	// TODO: separate out into proper package and file
 	s := &server{
 		db: db,
 	}
-
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		data := map[string]string{
-			"Region": os.Getenv("FLY_REGION"),
-		}
-		t.ExecuteTemplate(w, "index.html.tmpl", data)
-	})
 
 	r := chi.NewRouter()
 
@@ -124,6 +127,39 @@ func main() {
 		})
 	})
 
+	// health endpoint establishes the health of the server and postgres instance
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		var dbStatus bool
+
+		tx := s.db.Raw("SELECT 1;")
+		if tx.Error != nil {
+			log.Printf("postgres health check failed: %+v", tx.Error)
+			dbStatus = false
+		} else {
+			dbStatus = true
+		}
+
+		data := map[string]interface{}{
+			"Server":   true,
+			"Database": dbStatus,
+		}
+
+		if err := writeJSON(w, data); err != nil {
+			http.Error(w, "failed to write json", http.StatusBadRequest)
+			return
+		}
+	})
+
 	log.Println("listening on", port)
 	log.Fatal(http.ListenAndServe(":"+port, r))
+}
+
+func writeJSON(w http.ResponseWriter, data any) error {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal json: %w", err)
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write(b)
+	return nil
 }
