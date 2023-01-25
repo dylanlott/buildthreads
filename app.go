@@ -2,13 +2,14 @@ package main
 
 import (
 	"embed"
-	"encoding/json"
 	"html/template"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -38,12 +39,17 @@ type BuildsResponse struct {
 	Builds []Build
 }
 
+type BuildDetail struct {
+	Build Build
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
+	// TODO: read DSN from env vars
 	dsn := "host=localhost user=postgres dbname=postgres port=5432 sslmode=disable"
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -57,16 +63,24 @@ func main() {
 		db: db,
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		data := map[string]string{
 			"Region": os.Getenv("FLY_REGION"),
 		}
 		t.ExecuteTemplate(w, "index.html.tmpl", data)
 	})
 
-	http.HandleFunc("/builds", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
+	r := chi.NewRouter()
+
+	// Register middlewares
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+
+	// Register Builds Endpoint
+	r.Route("/builds", func(r chi.Router) {
+		// Build Main List
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			var builds []Build
 
 			result := s.db.Find(&builds)
@@ -80,43 +94,36 @@ func main() {
 				Builds: builds,
 			}
 
-			log.Printf("%+v\n", builds)
-
 			t.ExecuteTemplate(w, "builds.html.tmpl", buildsRes)
-		case http.MethodPost:
-			defer r.Body.Close()
-			b, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				log.Printf("failed to parse build: %+v", err)
-				http.Error(w, "failed to parse build", http.StatusBadRequest)
-				return
-			}
-			build := &Build{}
-			err = json.Unmarshal(b, &build)
-			if err != nil {
-				log.Printf("failed to parse build: %+v", err)
-				http.Error(w, "failed to parse build", http.StatusBadRequest)
-				return
-			}
+		})
 
-			result := s.db.Create(&build)
-			if result.Error != nil {
-				log.Printf("failed to create build: %+v", err)
-				http.Error(w, "failed to parse build", http.StatusBadRequest)
-				return
-			}
-
-			log.Printf("result: %+v", result)
-
-			w.WriteHeader(http.StatusOK)
-			return
-		case http.MethodPut:
-		case http.MethodDelete:
-		default:
-			panic("not impl")
-		}
+		// Build Detail Route
+		r.Route("/{buildID}", func(r chi.Router) {
+			r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				id := chi.URLParam(r, "buildID")
+				parsedID, err := strconv.Atoi(id)
+				if err != nil {
+					log.Printf("failed to parse build: %+v", err)
+					http.Error(w, "failed to parse build", http.StatusBadRequest)
+					return
+				}
+				b := Build{}
+				b.ID = uint(parsedID)
+				result := db.Find(&b)
+				if result.Error != nil {
+					log.Printf("failed to parse build: %+v", err)
+					http.Error(w, "failed to parse build", http.StatusBadRequest)
+					return
+				}
+				details := BuildDetail{
+					Build: b,
+				}
+				log.Printf("buildDetails: %+v", details)
+				t.ExecuteTemplate(w, "build_details.html.tmpl", details)
+			})
+		})
 	})
 
 	log.Println("listening on", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, r))
 }

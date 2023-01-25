@@ -14,14 +14,10 @@
   </head>
   <body>
   <div>
-    <h1>Builds</h1>
-    {{range .Builds}} 
-      <div>
-        <a href="/builds/{{.ID}}">{{.Name}} -- {{.CreatedAt}}</a>
-      </div>
-    {{end}}
+    <div><h1>{{.Build.Name}} - <i>by {{.Build.Owner}}</i></h1></div>
+    <div>{{.Build.Description}}</div>
+  </div>
 	<script>
-    // TODO: for the script
   </script>
   </body>
 </html>
