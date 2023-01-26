@@ -22,7 +22,8 @@ var resources embed.FS
 var t = template.Must(template.ParseFS(resources, "templates/*"))
 
 type server struct {
-	db *gorm.DB
+	db     *gorm.DB
+	router chi.Router
 }
 
 // Build holds info for a general Build. The BuildsResponse creates
@@ -41,6 +42,7 @@ type BuildsResponse struct {
 	Builds []Build
 }
 
+// BuildDetail holds a single build's individual details.
 type BuildDetail struct {
 	Build Build
 }
@@ -68,25 +70,44 @@ func main() {
 	// Migrate models
 	db.AutoMigrate(&Build{})
 
+	r := chi.NewRouter()
+
 	// TODO: separate out into proper package and file
 	s := &server{
-		db: db,
+		db:     db,
+		router: r,
 	}
-
-	r := chi.NewRouter()
 
 	// Register middlewares
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// Index and home page rendering
 	r.Route("/", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			data := map[string]interface{}{}
-			t.ExecuteTemplate(w, "index.html.tmpl", data)
+			var builds []Build
+
+			result := s.db.Find(&builds)
+			if result.Error != nil {
+				log.Printf("failed to parse build: %+v", err)
+				http.Error(w, "failed to parse build", http.StatusBadRequest)
+				return
+			}
+
+			type IndexResponse struct {
+				BuildList []Build
+			}
+
+			indexRes := IndexResponse{
+				BuildList: builds,
+			}
+
+			t.ExecuteTemplate(w, "index.html.tmpl", indexRes)
 		})
 	})
-	// Register Builds Endpoint
+
+	// Register Builds Endpoint and Builds page rendering.
 	r.Route("/builds", func(r chi.Router) {
 		// Build Main List
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
